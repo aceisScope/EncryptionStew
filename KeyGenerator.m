@@ -61,6 +61,20 @@ const NSUInteger kPBKDFRounds = 10000;  // ~80ms on an iPhone 4
     return derivedKey;
 }
 
++ (NSString *) randomStringGeneratorWithLength: (int) len
+{
+    
+    NSString *letters = @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    
+    NSMutableString *randomString = [NSMutableString stringWithCapacity: len];
+    
+    for (int i=0; i<len; i++) {
+        [randomString appendFormat: @"%C", [letters characterAtIndex: arc4random_uniform([letters length])]];
+    }
+    
+    return randomString;
+}
+
 
 + (NSString *)doHmacSha1:(NSString *)dataIn key:(NSData *)key
 {
@@ -74,5 +88,8 @@ const NSUInteger kPBKDFRounds = 10000;  // ~80ms on an iPhone 4
     NSString *hash = [macOut base64EncodedStringWithOptions:0];
     return hash;
 }
+
+
+
 
 @end

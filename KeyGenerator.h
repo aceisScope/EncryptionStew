@@ -33,6 +33,14 @@
 + (NSData*)rkeyGenerateWithIrand:(NSData*)irand rrand:(NSData*)rrand;
 
 
+/**
+ *  generate a random alphanumeric string
+ *
+ *  @param len the length of the string to be generated
+ *
+ *  @return generated string
+ */
++ (NSString *) randomStringGeneratorWithLength: (int) len;
 
 /**
  *  HMAC SHA1 hash
@@ -43,5 +51,8 @@
  *  @return hashed value in base 64 string
  */
 + (NSString *)doHmacSha1:(NSString *)dataIn key:(NSData *)key;
+
+
+
 
 @end
