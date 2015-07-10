@@ -17,6 +17,7 @@ Key generator includes:
 ### Secure Remote Password wrapper for iOS
 Based on [csrp](https://github.com/hoccer/csrp) by Tom Cocagne from Hoccer GmbH.
 The structure, algorithm and values mentioned in the codes are from a compatible Python module called [pysrp](http://pythonhosted.org/srp/srp.html). Please refer to this man page for notations.
+It requires OpenSSL as the only dependency.
 
 SRPClient is a class for SRP client side. 
 
