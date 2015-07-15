@@ -2,7 +2,10 @@
 encryption methods used for iOS version of Social PaL, Aalto University
 
 ### ECKeyPairManager
-Key pari manager singleton class for elliptic curve Diffie–Hellman (ECDH). ECDH key generation based on [GMEllipticCurveCrypto](https://github.com/ricmoo/GMEllipticCurveCrypto) from Richard Moore
+Key pair manager singleton class for elliptic curve Diffie–Hellman (ECDH). ECDH key generation based on [GMEllipticCurveCrypto](https://github.com/ricmoo/GMEllipticCurveCrypto) from Richard Moore
+
+### RSAKeyPairManager
+Asymmetric key pair manager for RSA keys in iOS. Known issue see [issue 1](https://github.com/aceisScope/OminiShareiOS/issues/1) in OmniShare. 
 
 
 ### KeyGenerator
