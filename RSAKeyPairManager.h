@@ -14,6 +14,9 @@
 
 @interface RSAKeyPairManager : NSObject
 
+- (NSData *)getPublicKeyExp;
+- (NSData *)getPublicKeyMod;
+
 + (instancetype)keypair;
 
 /**
@@ -40,6 +43,28 @@
  *  @return own public key in NSData
  */
 - (NSData *)getSelfPublicKeyBits;
+
+
+/**
+ *  public key
+ *
+ *  @return public key in base64 string
+ */
+- (NSString *)getSelfPublicKeyBase64;
+
+/**
+ *  Get own private key, in order to be hashed to root key
+ *
+ *  @return own private key in NSData
+ */
+- (NSData *)getSelfPrivateKeyBits;
+
+/**
+ *  Get own private key, in order to be hashed to root key
+ *
+ *  @return own private key in Base64
+ */
+- (NSString *)getSelfPrivateKeyBase64;
 
 /**
  *  Add peer's public key to key chain

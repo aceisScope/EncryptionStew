@@ -14,29 +14,25 @@
 
 /**
  *  https://developer.apple.com/library/mac/documentation/Security/Conceptual/CertKeyTrustProgGuide/iPhone_Tasks/iPhone_Tasks.html
+ *  https://developer.apple.com/library/ios/samplecode/CryptoExercise/Listings/Classes_SecKeyWrapper_m.html#//apple_ref/doc/uid/DTS40008019-Classes_SecKeyWrapper_m-DontLinkElementID_17`
  *  Encrypting and Decrypting Data
  */
 
-#define kChosenCipherBlockSize 16
-#define kChosenCipherKeySize 8
-SecKeyRef oPublicKey;
-SecKeyRef oPrivateKey;
+
 
 CFDictionaryRef myDictionary;
 
-CFTypeRef keys[2];
-CFTypeRef values[2];
-const size_t BUFFER_SIZE = 64;
+
+const size_t BUFFER_SIZE = 64; //64;
 const size_t CIPHER_BUFFER_SIZE = 1024;
-const uint32_t PADDING = kSecPaddingNone;
+const size_t KEY_SIZE = 2048;
+const uint32_t PADDING = kSecPaddingOAEP;
 
 
 //Defines unique strings to be added as attributes to the private and public key keychain items to make them easier to find later
-static const UInt8 publicKeyIdentifier[] = "cs.hut.publickey222\0";
-static const UInt8 privateKeyIdentifier[] = "cs.hut.privatekey111\0";
+static const UInt8 publicKeyIdentifier[] = "cs.tkk.publickey.new\0";
+static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
 
-SecKeyRef publicKey;
-SecKeyRef privateKey;
 
 
 #define kKeyPairGeneration @"KeyPairGeneration"
@@ -69,46 +65,138 @@ SecKeyRef privateKey;
 #pragma mark - Public
 - (NSData *)encryptWithPublicKey:(NSData *)dataToEncrypt
 {
-    char *plainTemp = (char*) [dataToEncrypt bytes];
-    //plainTemp[[dataToEncrypt length] - 1]='\0';
+    uint8_t*  plainBuffer = (uint8_t*)[dataToEncrypt bytes];
+    size_t plainBufferSize = [dataToEncrypt length];;
     
-    int len = [dataToEncrypt length];  // don't use strlen(plainTemp) since its last bit may not be \0
-    if (len > BUFFER_SIZE) len = BUFFER_SIZE-1;
-    
-    uint8_t* plainBuffer = (uint8_t *)calloc(BUFFER_SIZE, sizeof(uint8_t));
-    uint8_t* cipherBuffer = (uint8_t *)calloc(CIPHER_BUFFER_SIZE, sizeof(uint8_t));
-    
-    strncpy( (char *)plainBuffer,plainTemp, len);
+
+    OSStatus status = noErr;
 
     
-    NSLog(@"init() plainBuffer: %s", plainBuffer);
-    [self encryptWithPublicKey:(UInt8 *)plainBuffer cipherBuffer:cipherBuffer];
-    NSLog(@"encrypted data: %s", cipherBuffer);
+    SecKeyRef publicKey=[self getPublicKeyRef];
+    NSLog(@"ENCRYPT SecKeyGetBlockSize() public = %lu", SecKeyGetBlockSize(publicKey));
+    
+    size_t keyBlockSize = SecKeyGetBlockSize(publicKey);
+    
+    size_t cipherBufferSize = keyBlockSize;
+    uint8_t*  cipherBuffer = malloc( cipherBufferSize * sizeof(uint8_t) );
+    memset((void *)cipherBuffer, 0x0, cipherBufferSize);
     
     
-    NSMutableData *data=[[NSMutableData alloc] init];
-    [data appendBytes:cipherBuffer length:strlen( (char*)cipherBuffer ) + 1];
+    NSLog(@"ENCRYPT plaintext %s length %lu",plainBuffer,plainBufferSize);
+    
+    //  Error handling
+    // Encrypt using the public.
+    status = SecKeyEncrypt(publicKey,
+                           PADDING,
+                           plainBuffer,
+                           plainBufferSize,
+                           cipherBuffer,
+                           &cipherBufferSize
+                           );
+    NSLog(@"ENCRYPT encryption result code: %d cipher buffer %@ (size: %lu)", (int)status,[self hexStringWithData:cipherBuffer ofLength:strlen((char*)cipherBuffer)], strlen((char*)cipherBuffer));
+    //NSLog(@"ENCRYPT plain buffer %s (size %lu)",plainBuffer,plainBufferSize);
+    //NSLog(@"encrypted text: %s", cipherBuffer);
+    
 
+//    NSMutableData *data=[[NSMutableData alloc] init];
+//    [data appendBytes:cipherBuffer length:strlen( (char*)cipherBuffer ) ];
+    
+    NSData *data = [NSData dataWithBytes:cipherBuffer length:cipherBufferSize];
+    free(cipherBuffer);
+    
+    if (publicKey) CFRelease(publicKey);
     
     return data;
 }
 
+- (NSData *)encrypt:(NSData *)dataToEncrypt WithPublicKeyOfPeer:(NSString *)tag
+{
+    uint8_t*  plainBuffer = (uint8_t*)[dataToEncrypt bytes];
+    size_t plainBufferSize = [dataToEncrypt length];;
+    
+    
+    OSStatus status = noErr;
+    
+    SecKeyRef key=[self getPeerKeyRef:tag];
+   
+    
+    size_t keyBlockSize = SecKeyGetBlockSize(key);
+    
+    NSLog(@"ENCRYPT SecKeyGetBlockSize() public = %lu", keyBlockSize);
+    
+    size_t cipherBufferSize = keyBlockSize;
+    uint8_t*  cipherBuffer = malloc( cipherBufferSize * sizeof(uint8_t) );
+    memset((void *)cipherBuffer, 0x0, cipherBufferSize);
+    
+    NSLog(@"ENCRYPT plaintext %s length %lu",plainBuffer,plainBufferSize);
+    //  Error handling
+    // Encrypt using the public.
+    status = SecKeyEncrypt(key,
+                           PADDING,
+                           plainBuffer,
+                           plainBufferSize,
+                           cipherBuffer,
+                           &cipherBufferSize
+                           );
+    
+    NSLog(@"ENCRYPT encryption result code: %d cipher buffer %@ (size: %lu)", (int)status,[self hexStringWithData:cipherBuffer ofLength:strlen((char*)cipherBuffer)], strlen((char*)cipherBuffer));
+    
+    if (status != noErr) return nil;
+    
+    NSData *data = [NSData dataWithBytes:cipherBuffer length:cipherBufferSize];
+    free(cipherBuffer);
+    
+    if (key) CFRelease(key);
+    
+    return data;
+}
+
+
 - (NSData*)decryptWithPrivateKey: (NSData *)dataToDecrypt
 {
-    char* cipher = (char*) [dataToDecrypt bytes];
     
-    uint8_t* cipherBuffer = (uint8_t *)calloc(CIPHER_BUFFER_SIZE, sizeof(uint8_t));
-    uint8_t* decryptedBuffer = (uint8_t *)calloc(BUFFER_SIZE, sizeof(uint8_t));
-    
-    strncpy( (char *)cipherBuffer, cipher, strlen(cipher));
-    
-    NSLog(@"CIPHER %s",cipherBuffer);
-    [self decryptWithPrivateKey:cipherBuffer plainBuffer:decryptedBuffer];
-    NSLog(@"decrypted data: %s", decryptedBuffer);
+    uint8_t*  cipherBuffer = (uint8_t*)[dataToDecrypt bytes];
+    size_t cipherBufferSize = (size_t)[dataToDecrypt length];
     
     
-    NSMutableData *data=[[NSMutableData alloc] init];
-    [data appendBytes:decryptedBuffer length:strlen( (char*)decryptedBuffer ) + 1];
+    OSStatus status = noErr;
+
+    
+    //NSLog(@"DECRYPT cipher buffer %@ (size %lu)",[self hexStringWithData:cipherBuffer ofLength:strlen((char*)cipherBuffer)],cipherBufferSize);
+    
+
+    SecKeyRef privateKey = [self getPrivateKeyRef];
+    
+    size_t keyBlockSize = SecKeyGetBlockSize(privateKey);
+    size_t plainBufferSize = keyBlockSize;
+    
+    uint8_t*  plainBuffer = malloc( plainBufferSize * sizeof(uint8_t) );
+    memset((void *)plainBuffer, 0x0, plainBufferSize);
+    
+    
+    //  Error handling
+    status = SecKeyDecrypt(privateKey,
+                           PADDING,
+                           cipherBuffer,
+                           cipherBufferSize,
+                           plainBuffer,
+                           &plainBufferSize
+                           );
+    
+    //NSLog(@"DECRYPT cipher buffer %s (size %lu)",cipherBuffer,cipherBufferSize);
+    //NSLog(@"DECRYPT decryption result code: %d plain buffer %s(size: %lu)", (int)status,plainBuffer, strlen((char*)plainBuffer));
+    //NSLog(@"FINAL decrypted text: %s", plainBuffer);
+    
+    
+    
+    
+//    NSMutableData *data=[[NSMutableData alloc] init];
+//    [data appendBytes:plainBuffer length:strlen( (char*)plainBuffer ) ];
+    
+    NSData *data = [NSData dataWithBytes:plainBuffer length:plainBufferSize];
+    free(plainBuffer);
+    
+    if(privateKey) CFRelease(privateKey);
     
     return data;
     
@@ -140,11 +228,63 @@ SecKeyRef privateKey;
     
     publicKeyBits = CFBridgingRelease(publicKeyResult);
     
+    //NSLog(@"GETSELFPUBLIC  publickeybits = %d %@", [publicKeyBits length],publicKeyBits);
+    
     return publicKeyBits;
+}
+
+
+- (NSString *)getSelfPublicKeyBase64
+{
+    NSData *publicKeyBits = [self getSelfPublicKeyBits];
+    
+    NSString * publicKeyBase64 = [publicKeyBits base64EncodedStringWithOptions:(NSDataBase64Encoding64CharacterLineLength)];
+    
+    return publicKeyBase64;
+}
+
+- (NSData *)getSelfPrivateKeyBits
+{
+    OSStatus sanityCheck = noErr;
+    NSData * privateKeyBits = nil;
+    
+    
+    NSMutableDictionary * queryPrivateKey = [[NSMutableDictionary alloc] init];
+    NSData *privateTag = [NSData dataWithBytes:privateKeyIdentifier
+                                       length:strlen((const char *)privateKeyIdentifier)];
+    
+    [queryPrivateKey setObject:(__bridge id)kSecClassKey forKey:(__bridge id)kSecClass];
+    [queryPrivateKey setObject: privateTag forKey:(__bridge id)kSecAttrApplicationTag];
+    [queryPrivateKey setObject:(__bridge id)kSecAttrKeyTypeRSA forKey:(__bridge id)kSecAttrKeyType];
+    [queryPrivateKey setObject:[NSNumber numberWithBool:YES] forKey:(__bridge id)kSecReturnData];
+    
+    CFTypeRef privateKeyResult;
+    
+    sanityCheck = SecItemCopyMatching((__bridge CFDictionaryRef)queryPrivateKey, (CFTypeRef *)&privateKeyResult);
+    
+    if (sanityCheck != noErr)
+    {
+        privateKeyBits = nil;
+    }
+    
+    privateKeyBits = CFBridgingRelease(privateKeyResult);
+    
+    return privateKeyBits;
+}
+
+- (NSString *)getSelfPrivateKeyBase64
+{
+    NSData *privateKeyBits = [self getSelfPrivateKeyBits];
+    
+    NSString * privateKeyBase64 = [privateKeyBits base64EncodedStringWithOptions:(NSDataBase64Encoding64CharacterLineLength)];
+    
+    return privateKeyBase64;
 }
 
 - (BOOL)addPublicKey:(NSData *)key withTag:(NSString *)tag
 {
+    //NSLog(@"ADDPEERKEY %d %@",[key length],key);
+    
     NSData *d_tag = [NSData dataWithBytes:[tag UTF8String] length:[tag length]];
     
     // Delete any old lingering key with the same tag
@@ -178,6 +318,8 @@ SecKeyRef privateKey;
     [publicKey setObject:(__bridge id) kSecAttrKeyTypeRSA forKey:(__bridge id)kSecAttrKeyType];
     SecItemCopyMatching((__bridge CFDictionaryRef)publicKey,(CFTypeRef *)&keyRef);
     
+    NSLog(@"ADDPEERKEY SecKeyGetBlockSize() public = %lu", SecKeyGetBlockSize(keyRef));
+    
     
     if (keyRef == nil) return(FALSE);
     
@@ -185,47 +327,6 @@ SecKeyRef privateKey;
     return(TRUE);
 }
 
-- (NSData *)encrypt:(NSData *)dataToEncrypt WithPublicKeyOfPeer:(NSString *)tag
-{
-    char *plainTemp = (char*) [dataToEncrypt bytes];
-    //plainTemp[[dataToEncrypt length] - 1]='\0';
-    
-    int len = [dataToEncrypt length];  // don't use strlen(plainTemp) since its last bit may not be \0
-    if (len > BUFFER_SIZE) len = BUFFER_SIZE-1;
-    
-    uint8_t* plainBuffer = (uint8_t *)calloc(BUFFER_SIZE, sizeof(uint8_t));
-    uint8_t* cipherBuffer = (uint8_t *)calloc(CIPHER_BUFFER_SIZE, sizeof(uint8_t));
-    
-    strncpy( (char *)plainBuffer,plainTemp, len);
-    
-    
-    OSStatus status = noErr;
-    
-    
-    size_t plainBufferSize = strlen((char *)plainBuffer);
-    size_t cipherBufferSize = CIPHER_BUFFER_SIZE;
-    SecKeyRef key=[self getPeerKeyRef:tag];
-    //  Error handling
-    // Encrypt using the public.
-    status = SecKeyEncrypt(key,
-                           PADDING,
-                           plainBuffer,
-                           plainBufferSize,
-                           &cipherBuffer[0],
-                           &cipherBufferSize
-                           );
-
-    NSLog(@"peer :%@ encrypted data: %s",tag, cipherBuffer);
-    
-    if (status != noErr) return nil;
-    
-    NSMutableData *data=[[NSMutableData alloc] init];
-    [data appendBytes:cipherBuffer length:strlen( (char*)cipherBuffer ) + 1];
-    
-    
-    return data;
-
-}
 
 #pragma mark- Private
 
@@ -245,15 +346,15 @@ SecKeyRef privateKey;
     
     NSData * privateTag = [NSData dataWithBytes:privateKeyIdentifier
                                          length:strlen((const char *)privateKeyIdentifier)];
-    publicKey = NULL;
-    privateKey = NULL;
+    SecKeyRef publicKey = NULL;
+    SecKeyRef privateKey = NULL;
     
     //Sets the key-type attribute for the key pair to RSA
     [keyPairAttr setObject:(__bridge id)kSecAttrKeyTypeRSA
                     forKey:(__bridge id)kSecAttrKeyType];
     
     //Sets the key-size attribute for the key pair to 1024 bits
-    [keyPairAttr setObject:[NSNumber numberWithInt:1024]
+    [keyPairAttr setObject:[NSNumber numberWithInt:KEY_SIZE]
                     forKey:(__bridge id)kSecAttrKeySizeInBits];
     
     //Sets an attribute specifying that the private key is to be stored permanently (that is, put into the keychain)
@@ -278,63 +379,18 @@ SecKeyRef privateKey;
     
     status = SecKeyGeneratePair((__bridge CFDictionaryRef)keyPairAttr,
                                 &publicKey, &privateKey);
+    
+    if(publicKey) CFRelease(publicKey);
+    if(privateKey) CFRelease(privateKey);
 }
 
-- (void)encryptWithPublicKey:(uint8_t *)plainBuffer cipherBuffer:(uint8_t *)cipherBuffer
-{
-    //  NSLog(@"== encryptWithPublicKey()");
-    
-    OSStatus status = noErr;
-    
-    //NSLog(@"** original plain text 0: %s", plainBuffer);
-    
-    size_t plainBufferSize = strlen((char *)plainBuffer);
-    size_t cipherBufferSize = CIPHER_BUFFER_SIZE;
-    SecKeyRef key=[self getPublicKeyRef];
-    //NSLog(@"SecKeyGetBlockSize() public = %lu", SecKeyGetBlockSize(key));
-    //  Error handling
-    // Encrypt using the public.
-    status = SecKeyEncrypt(key,
-                           PADDING,
-                           plainBuffer,
-                           plainBufferSize,
-                           &cipherBuffer[0],
-                           &cipherBufferSize
-                           );
-    // NSLog(@"encryption result code: %d (size: %d)", status, cipherBufferSize);
-    //NSLog(@"encrypted text: %s", cipherBuffer);
-}
-- (void)decryptWithPrivateKey:(uint8_t *)cipherBuffer plainBuffer:(uint8_t *)plainBuffer
-{
-    OSStatus status = noErr;
-    
-    size_t cipherBufferSize = strlen((char *)cipherBuffer);
-    
-    //NSLog(@"decryptWithPrivateKey: length of buffer: %lu", BUFFER_SIZE);
-    //NSLog(@"decryptWithPrivateKey: length of cipher: %lu", cipherBufferSize);
-    
-    // DECRYPTION
-    size_t plainBufferSize = BUFFER_SIZE;
-    
-    //  Error handling
-    status = SecKeyDecrypt([self getPrivateKeyRef],
-                           PADDING,
-                           &cipherBuffer[0],
-                           cipherBufferSize,
-                           &plainBuffer[0],
-                           &plainBufferSize
-                           );
-    //NSLog(@"decryption result code: %lu (size: %lu)", status, plainBufferSize);
-    NSLog(@"FINAL decrypted text: %s", plainBuffer);
-    
-}
 
 - (SecKeyRef)getPublicKeyRef
 {
     OSStatus resultCode = noErr;
     SecKeyRef publicKeyReference = NULL;
     
-    if(publicKey == NULL) {
+//    if(publicKey == NULL) {
         NSMutableDictionary * queryPublicKey = [[NSMutableDictionary alloc] init];
         
         NSData *publicTag = [NSData dataWithBytes:publicKeyIdentifier
@@ -360,9 +416,9 @@ SecKeyRef privateKey;
         }
         
         
-    } else {
-        publicKeyReference = publicKey;
-    }
+//    } else {
+//        publicKeyReference = publicKey;
+//    }
     
     return publicKeyReference;
 }
@@ -372,7 +428,7 @@ SecKeyRef privateKey;
     OSStatus resultCode = noErr;
     SecKeyRef privateKeyReference = NULL;
     
-    if(privateKey == NULL) {
+//    if(privateKey == NULL) {
         NSMutableDictionary * queryPrivateKey = [[NSMutableDictionary alloc] init];
         NSData *privateTag = [NSData dataWithBytes:privateKeyIdentifier
                               
@@ -392,12 +448,13 @@ SecKeyRef privateKey;
             privateKeyReference = NULL;
         }
         
-    } else {
-        privateKeyReference = privateKey;
-    }
+//    } else {
+//        privateKeyReference = privateKey;
+//    }
     
     return privateKeyReference;
 }
+
 
 
 
@@ -411,13 +468,73 @@ SecKeyRef privateKey;
     [publicKey setObject:(__bridge id) kSecAttrKeyTypeRSA forKey:(__bridge id)kSecAttrKeyType];
     [publicKey setObject:d_tag forKey:(__bridge id)kSecAttrApplicationTag];
     [publicKey setObject:[NSNumber numberWithBool:YES] forKey:(__bridge id)kSecReturnRef];
-    [publicKey setObject:(__bridge id) kSecAttrKeyTypeRSA forKey:(__bridge id)kSecAttrKeyType];
     [publicKey setObject:(__bridge id) kSecAttrKeyClassPublic forKey:(__bridge id)kSecAttrKeyClass];
     SecItemCopyMatching((__bridge CFDictionaryRef)publicKey,(CFTypeRef *)&persistentRef);
     
     
     return persistentRef;
     
+}
+
+- (NSString*) hexStringWithData: (unsigned char*) data ofLength: (NSUInteger) len
+{
+    NSMutableString *tmp = [NSMutableString string];
+    for (NSUInteger i=0; i<len; i++)
+        [tmp appendFormat:@"%02x", data[i]];
+    return [NSString stringWithString:tmp];
+}
+
+- (NSData *)getPublicKeyExp
+{
+    NSData* pk = [self getSelfPublicKeyBits];
+    if (pk == NULL) return NULL;
+    
+    int iterator = 0;
+    
+    iterator++; // TYPE - bit stream - mod + exp
+    [self derEncodingGetSizeFrom:pk at:&iterator]; // Total size
+    
+    iterator++; // TYPE - bit stream mod
+    int mod_size = [self derEncodingGetSizeFrom:pk at:&iterator];
+    iterator += mod_size;
+    
+    iterator++; // TYPE - bit stream exp
+    int exp_size = [self derEncodingGetSizeFrom:pk at:&iterator];
+    
+    return [pk subdataWithRange:NSMakeRange(iterator, exp_size)];
+}
+
+- (NSData *)getPublicKeyMod
+{
+    NSData* pk = [self getSelfPublicKeyBits];
+    if (pk == NULL) return NULL;
+    
+    int iterator = 0;
+    
+    iterator++; // TYPE - bit stream - mod + exp
+    [self derEncodingGetSizeFrom:pk at:&iterator]; // Total size
+    
+    iterator++; // TYPE - bit stream mod
+    int mod_size = [self derEncodingGetSizeFrom:pk at:&iterator];
+    
+    return [pk subdataWithRange:NSMakeRange(iterator, mod_size)];
+}
+- (int)derEncodingGetSizeFrom:(NSData*)buf at:(int*)iterator
+{
+    const uint8_t* data = [buf bytes];
+    int itr = *iterator;
+    int num_bytes = 1;
+    int ret = 0;
+    
+    if (data[itr] > 0x80) {
+        num_bytes = data[itr] - 0x80;
+        itr++;
+    }
+    
+    for (int i = 0 ; i < num_bytes; i++) ret = (ret * 0x100) + data[itr + i];
+    
+    *iterator = itr + num_bytes;
+    return ret;
 }
 
 @end
