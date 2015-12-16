@@ -16,6 +16,9 @@
  *  https://developer.apple.com/library/mac/documentation/Security/Conceptual/CertKeyTrustProgGuide/iPhone_Tasks/iPhone_Tasks.html
  *  https://developer.apple.com/library/ios/samplecode/CryptoExercise/Listings/Classes_SecKeyWrapper_m.html#//apple_ref/doc/uid/DTS40008019-Classes_SecKeyWrapper_m-DontLinkElementID_17`
  *  Encrypting and Decrypting Data
+ *
+ *  http://blog.wingsofhermes.org/?p=42
+ *  special for android
  */
 
 
@@ -26,7 +29,8 @@ CFDictionaryRef myDictionary;
 const size_t BUFFER_SIZE = 64; //64;
 const size_t CIPHER_BUFFER_SIZE = 1024;
 const size_t KEY_SIZE = 2048;
-const uint32_t PADDING = kSecPaddingOAEP;
+const uint32_t DECRYPT_PADDING =kSecPaddingPKCS1; //  kSecPaddingOAEP;
+const uint32_t ENCRYPT_PADDING= kSecPaddingPKCS1;
 
 
 //Defines unique strings to be added as attributes to the private and public key keychain items to make them easier to find later
@@ -73,7 +77,7 @@ static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
 
     
     SecKeyRef publicKey=[self getPublicKeyRef];
-    NSLog(@"ENCRYPT SecKeyGetBlockSize() public = %lu", SecKeyGetBlockSize(publicKey));
+    //NSLog(@"ENCRYPT SecKeyGetBlockSize() public = %lu", SecKeyGetBlockSize(publicKey));
     
     size_t keyBlockSize = SecKeyGetBlockSize(publicKey);
     
@@ -82,18 +86,18 @@ static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
     memset((void *)cipherBuffer, 0x0, cipherBufferSize);
     
     
-    NSLog(@"ENCRYPT plaintext %s length %lu",plainBuffer,plainBufferSize);
+    //NSLog(@"ENCRYPT plaintext %s length %lu",plainBuffer,plainBufferSize);
     
     //  Error handling
     // Encrypt using the public.
     status = SecKeyEncrypt(publicKey,
-                           PADDING,
+                           ENCRYPT_PADDING,
                            plainBuffer,
                            plainBufferSize,
                            cipherBuffer,
                            &cipherBufferSize
                            );
-    NSLog(@"ENCRYPT encryption result code: %d cipher buffer %@ (size: %lu)", (int)status,[self hexStringWithData:cipherBuffer ofLength:strlen((char*)cipherBuffer)], strlen((char*)cipherBuffer));
+    //NSLog(@"ENCRYPT encryption result code: %d cipher buffer %@ (size: %lu)", (int)status,[self hexStringWithData:cipherBuffer ofLength:strlen((char*)cipherBuffer)], strlen((char*)cipherBuffer));
     //NSLog(@"ENCRYPT plain buffer %s (size %lu)",plainBuffer,plainBufferSize);
     //NSLog(@"encrypted text: %s", cipherBuffer);
     
@@ -122,24 +126,24 @@ static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
     
     size_t keyBlockSize = SecKeyGetBlockSize(key);
     
-    NSLog(@"ENCRYPT SecKeyGetBlockSize() public = %lu", keyBlockSize);
+    //NSLog(@"ENCRYPT SecKeyGetBlockSize() public = %lu", keyBlockSize);
     
     size_t cipherBufferSize = keyBlockSize;
     uint8_t*  cipherBuffer = malloc( cipherBufferSize * sizeof(uint8_t) );
     memset((void *)cipherBuffer, 0x0, cipherBufferSize);
     
-    NSLog(@"ENCRYPT plaintext %s length %lu",plainBuffer,plainBufferSize);
+    //NSLog(@"ENCRYPT plaintext %s length %lu",plainBuffer,plainBufferSize);
     //  Error handling
     // Encrypt using the public.
     status = SecKeyEncrypt(key,
-                           PADDING,
+                           ENCRYPT_PADDING,
                            plainBuffer,
                            plainBufferSize,
                            cipherBuffer,
                            &cipherBufferSize
                            );
     
-    NSLog(@"ENCRYPT encryption result code: %d cipher buffer %@ (size: %lu)", (int)status,[self hexStringWithData:cipherBuffer ofLength:strlen((char*)cipherBuffer)], strlen((char*)cipherBuffer));
+    //NSLog(@"ENCRYPT encryption result code: %d cipher buffer %@ (size: %lu)", (int)status,[self hexStringWithData:cipherBuffer ofLength:strlen((char*)cipherBuffer)], strlen((char*)cipherBuffer));
     
     if (status != noErr) return nil;
     
@@ -176,15 +180,15 @@ static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
     
     //  Error handling
     status = SecKeyDecrypt(privateKey,
-                           PADDING,
+                           DECRYPT_PADDING,
                            cipherBuffer,
                            cipherBufferSize,
                            plainBuffer,
                            &plainBufferSize
                            );
     
-    //NSLog(@"DECRYPT cipher buffer %s (size %lu)",cipherBuffer,cipherBufferSize);
-    //NSLog(@"DECRYPT decryption result code: %d plain buffer %s(size: %lu)", (int)status,plainBuffer, strlen((char*)plainBuffer));
+    //NSLog(@"DECRYPT cipher buffer %@ (size %lu)",[self hexStringWithData:cipherBuffer ofLength:cipherBufferSize],cipherBufferSize);
+    NSLog(@"DECRYPT decryption result code: %d plain buffer %s(size: %lu)", (int)status,plainBuffer, strlen((char*)plainBuffer));
     //NSLog(@"FINAL decrypted text: %s", plainBuffer);
     
     
@@ -230,6 +234,7 @@ static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
     
     //NSLog(@"GETSELFPUBLIC  publickeybits = %d %@", [publicKeyBits length],publicKeyBits);
     
+    
     return publicKeyBits;
 }
 
@@ -242,6 +247,84 @@ static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
     
     return publicKeyBase64;
 }
+
+
+// Helper function for ASN.1 encoding
+
+size_t encodeLength(unsigned char * buf, size_t length) {
+    
+    // encode length in ASN.1 DER format
+    if (length < 128) {
+        buf[0] = length;
+        return 1;
+    }
+    
+    size_t i = (length / 256) + 1;
+    buf[0] = i + 0x80;
+    for (size_t j = 0 ; j < i; ++j) {         buf[i - j] = length & 0xFF;         length = length >> 8;
+    }
+    
+    return i + 1;
+}
+
+- (NSData *)getSelfPublicKeyBitsForAndroid
+{
+    static const unsigned char _encodedRSAEncryptionOID[15] = {
+        
+        /* Sequence of length 0xd made up of OID followed by NULL */
+        0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
+        0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00
+        
+    };
+    
+    // OK - that gives us the "BITSTRING component of a full DER
+    // encoded RSA public key - we now need to build the rest
+    NSData * publicKeyBits = [self getSelfPublicKeyBits];
+    
+    unsigned char builder[15];
+    NSMutableData * encKey = [[NSMutableData alloc] init];
+    int bitstringEncLength;
+    
+    // When we get to the bitstring - how will we encode it?
+    if  ([publicKeyBits length ] + 1  < 128 )
+        bitstringEncLength = 1 ;
+    else
+        bitstringEncLength = (([publicKeyBits length ] +1 ) / 256 ) + 2 ;
+    
+    // Overall we have a sequence of a certain length
+    builder[0] = 0x30;    // ASN.1 encoding representing a SEQUENCE
+    // Build up overall size made up of -
+    // size of OID + size of bitstring encoding + size of actual key
+    size_t i = sizeof(_encodedRSAEncryptionOID) + 2 + bitstringEncLength +
+    [publicKeyBits length];
+    size_t j = encodeLength(&builder[1], i);
+    [encKey appendBytes:builder length:j +1];
+    
+    // First part of the sequence is the OID
+    [encKey appendBytes:_encodedRSAEncryptionOID
+                 length:sizeof(_encodedRSAEncryptionOID)];
+    
+    // Now add the bitstring
+    builder[0] = 0x03;
+    j = encodeLength(&builder[1], [publicKeyBits length] + 1);
+    builder[j+1] = 0x00;
+    [encKey appendBytes:builder length:j + 2];
+    
+    // Now the actual key
+    [encKey appendData:publicKeyBits];
+    
+    return encKey;
+}
+
+- (NSString *)getSelfPublicKeyBase64ForAndroid
+{
+    NSData *publicKeyBits = [self getSelfPublicKeyBitsForAndroid];
+    
+    NSString * publicKeyBase64 = [publicKeyBits base64EncodedStringWithOptions:(NSDataBase64Encoding64CharacterLineLength)];
+    
+    return publicKeyBase64;
+}
+
 
 - (NSData *)getSelfPrivateKeyBits
 {
@@ -318,13 +401,70 @@ static const UInt8 privateKeyIdentifier[] = "cs.tkk.privatekey.new\0";
     [publicKey setObject:(__bridge id) kSecAttrKeyTypeRSA forKey:(__bridge id)kSecAttrKeyType];
     SecItemCopyMatching((__bridge CFDictionaryRef)publicKey,(CFTypeRef *)&keyRef);
     
-    NSLog(@"ADDPEERKEY SecKeyGetBlockSize() public = %lu", SecKeyGetBlockSize(keyRef));
+    //NSLog(@"ADDPEERKEY SecKeyGetBlockSize() public = %lu", SecKeyGetBlockSize(keyRef));
     
     
     if (keyRef == nil) return(FALSE);
     
     
     return(TRUE);
+}
+
+- (BOOL)addAndroidPublicKey:(NSData*)rawFormattedKey withTag:(NSString*)tag
+{
+    
+    /* Now strip the uncessary ASN encoding guff at the start */
+    unsigned char * bytes = (unsigned char *)[rawFormattedKey bytes];
+    size_t bytesLen = [rawFormattedKey length];
+    
+    /* Strip the initial stuff */
+    size_t i = 0;
+    if (bytes[i++] != 0x30)
+        return FALSE;
+    
+    /* Skip size bytes */
+    if (bytes[i] > 0x80)
+        i += bytes[i] - 0x80 + 1;
+    else
+        i++;
+    
+    if (i >= bytesLen)
+        return FALSE;
+    
+    if (bytes[i] != 0x30)
+        return FALSE;
+    
+    /* Skip OID */
+    i += 15;
+    
+    if (i >= bytesLen - 2)
+        return FALSE;
+    
+    if (bytes[i++] != 0x03)
+        return FALSE;
+    
+    /* Skip length and null */
+    if (bytes[i] > 0x80)
+        i += bytes[i] - 0x80 + 1;
+    else
+        i++;
+    
+    if (i >= bytesLen)
+        return FALSE;
+    
+    if (bytes[i++] != 0x00)
+        return FALSE;
+    
+    if (i >= bytesLen)
+        return FALSE;
+    
+    /* Here we go! */
+    NSData * extractedKey = [NSData dataWithBytes:&bytes[i] length:bytesLen - i];
+    
+    BOOL result = [self addPublicKey:extractedKey withTag:tag];
+    
+    return result;
+    
 }
 
 
