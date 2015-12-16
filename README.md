@@ -7,6 +7,21 @@ Key pair manager singleton class for elliptic curve Diffie–Hellman (ECDH). ECD
 ### RSAKeyPairManager
 Asymmetric key pair manager for RSA keys in iOS. A working version of RSA2048.
 
+On iOS platform, first an RSA key pair is generated and stored in the keychain. However, according to this [blog](http://blog.wingsofhermes.org/?p=42):
+
+>when you export a key from the iPhone keychain, it’s exported in a cut down format – just the public key and exponent without any of the other ASN.1 stuff you’d expect in a fully encoded public key. The java crypto functions generally expect a fully encoded key (OID and all).
+
+So when an iOS device is passing its public key to an Android device, it has to expand it out to a fully interoperable key with ASN.1 encoding in the X.509 format.
+
+Vice versa. When an Android app as **new device** sends its public key to an iOS app, it is encoded the full X.509 format. In order to be put into iOS keychain, this Android key must be peeled off the extra data in ASN.1, such that it will only consist the public key and exponent and can be added to the keychain.
+
+There're additional methods for iOS-Android public key exchange.
+```objective-c
+- (NSData *)getSelfPublicKeyBitsForAndroid;
+- (NSString *)getSelfPublicKeyBase64ForAndroid;
+- (BOOL)addAndroidPublicKey:(NSData*)key withTag:(NSString*)tag;
+```
+
 
 ### AES GCM
 AES in GCM mode. Since GCM mode is not supported by CommonCrypto Framework, OpenSSL is used. How to include and compile OpenSSL for iOS, please refer to its documents.
